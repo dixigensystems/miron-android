@@ -13,7 +13,7 @@ private WebView web;
 private TextToSpeech tts;
 protected void onCreate(Bundle b){
 super.onCreate(b);
-webweb=new WebView(this);
+web=new WebView(this);
 setContentView(web);
 tts=new TextToSpeech(this,this);
 WebSettings s=web.getSettings();
