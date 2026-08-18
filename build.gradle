@@ -9,9 +9,7 @@ android {
         targetSdk 34
         versionCode 3
         versionName "3.0"
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
-        }
+        ndk.abiFilters = ['arm64-v8a', 'armeabi-v7a']
     }
     buildTypes {
         release { minifyEnabled false }
@@ -21,7 +19,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     packagingOptions {
-        jniLibs { useLegacyPackaging true }
+        jniLibs.useLegacyPackaging = true
     }
 }
 
