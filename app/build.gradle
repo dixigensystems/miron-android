@@ -7,11 +7,9 @@ android {
         applicationId "ru.dixigen.miron"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "2.0"
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-        }
+        versionCode 3
+        versionName "3.0"
+        ndk.abiFilters = ['arm64-v8a', 'armeabi-v7a']
     }
     buildTypes {
         release { minifyEnabled false }
@@ -21,10 +19,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     packagingOptions {
-        jniLibs { useLegacyPackaging true }
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
 dependencies {
-    implementation 'com.k2fsa.sherpa:sherpa-onnx-android:1.10.31'
+    implementation 'com.alphacephei:vosk-android:0.3.45'
 }
