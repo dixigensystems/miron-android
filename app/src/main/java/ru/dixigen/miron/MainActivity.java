@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.AssetManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -14,35 +13,33 @@ import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.webkit.*;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
-import com.k2fsa.sherpa.onnx.OnlineRecognizer;
-import com.k2fsa.sherpa.onnx.OnlineStream;
-import com.k2fsa.sherpa.onnx.OnlineRecognizerResult;
-import com.k2fsa.sherpa.onnx.OnlineModelConfig;
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig;
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig;
-import com.k2fsa.sherpa.onnx.FeatConfig;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import com.alphacephei.Model;
+import com.alphacephei.Recognizer;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
 
     private static final String TAG = "Miron";
-    private static final String MODEL_DIR = "sherpa_model";
-    private static final String ENCODER = "encoder.int8.onnx";
-    private static final String DECODER = "decoder.int8.onnx";
-    private static final String JOINER  = "joiner.int8.onnx";
-    private static final String TOKENS  = "tokens.txt";
+    private static final String MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip";
+    private static final String MODEL_DIR = "vosk_model";
 
     private WebView web;
     private TextToSpeech tts;
-    private OnlineRecognizer recognizer;
+    private Model model;
+    private Recognizer recognizer;
     private AudioRecord recorder;
     private Thread recThread;
     private volatile boolean listening = false;
-    private OnlineStream stream;
-    private boolean modelReady = false;
+    private volatile boolean modelReady = false;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -77,9 +74,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         web.setWebChromeClient(new WebChromeClient() {
             public void onPermissionRequest(final PermissionRequest r) {
                 runOnUiThread(new Runnable() {
-                    public void run() {
-                        r.grant(r.getResources());
-                    }
+                    public void run() { r.grant(r.getResources()); }
                 });
             }
         });
@@ -91,60 +86,78 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
         web.loadUrl("https://miron.dixigen.ru/");
 
-        new Thread(new Runnable() {
-            public void run() { prepareModel(); }
-        }).start();
+        new Thread(new Runnable() { public void run() { prepareModel(); } }).start();
+    }
+
+    private void status(final String st) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                web.evaluateJavascript("window.onMironStatus&&window.onMironStatus('" + st + "')", null);
+            }
+        });
     }
 
     private void prepareModel() {
         try {
             File dir = new File(getFilesDir(), MODEL_DIR);
-            File fEnc = new File(dir, ENCODER);
-            if (!fEnc.exists()) {
-                dir.mkdirs();
-                AssetManager am = getAssets();
-                String[] files = am.list(MODEL_DIR);
-                if (files == null) {
-                    Log.e(TAG, "Папка с моделью не найдена в assets");
-                    return;
+            if (!dir.exists()) {
+                status("model_downloading");
+                File zip = new File(getCacheDir(), "vosk_model.zip");
+                download(MODEL_URL, zip);
+                unzip(zip, getFilesDir());
+                zip.delete();
+                File extracted = null;
+                File[] kids = getFilesDir().listFiles();
+                if (kids != null) {
+                    for (File k : kids) {
+                        if (k.isDirectory() && k.getName().startsWith("vosk-model")) { extracted = k; break; }
+                    }
                 }
-                for (String f : files) {
-                    InputStream in = am.open(MODEL_DIR + "/" + f);
-                    File out = new File(dir, f);
-                    OutputStream os = new FileOutputStream(out);
-                    byte[] buf = new byte[8192];
-                    int n;
-                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
-                    in.close();
-                    os.close();
+                if (extracted != null && !extracted.getName().equals(MODEL_DIR)) {
+                    extracted.renameTo(dir);
                 }
             }
-            OnlineModelConfig mc = new OnlineModelConfig();
-            OnlineTransducerModelConfig tc = new OnlineTransducerModelConfig();
-            tc.setEncoder(new File(dir, ENCODER).getAbsolutePath());
-            tc.setDecoder(new File(dir, DECODER).getAbsolutePath());
-            tc.setJoiner(new File(dir, JOINER).getAbsolutePath());
-            mc.setTransducer(tc);
-            mc.setTokens(new File(dir, TOKENS).getAbsolutePath());
-            mc.setNumThreads(2);
-
-            OnlineRecognizerConfig rc = new OnlineRecognizerConfig();
-            rc.setModel(mc);
-            rc.setFeat(new FeatConfig());
-            rc.setSampleRate(16000);
-            rc.setFeatureDim(80);
-            rc.setEnableEndpoint(true);
-            rc.setRule1MinTrailingSilence(2.4f);
-            rc.setRule2MinTrailingSilence(1.2f);
-            rc.setRule3MinUtteranceLength(20f);
-            rc.setDecodingMethod("greedy_search");
-
-            recognizer = new OnlineRecognizer(rc);
+            model = new Model(dir.getAbsolutePath());
             modelReady = true;
+            status("model_ready");
             Log.i(TAG, "Модель готова");
         } catch (Exception e) {
-            Log.e(TAG, "Ошибка подготовки модели: " + e.getMessage());
+            Log.e(TAG, "Ошибка подготовки модели: " + e);
+            status("model_error");
         }
+    }
+
+    private void download(String url, File out) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(120000);
+        InputStream in = c.getInputStream();
+        OutputStream os = new FileOutputStream(out);
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+        in.close();
+        os.close();
+        c.disconnect();
+    }
+
+    private void unzip(File zip, File destDir) throws Exception {
+        ZipInputStream zis = new ZipInputStream(new FileInputStream(zip));
+        ZipEntry e;
+        byte[] buf = new byte[8192];
+        while ((e = zis.getNextEntry()) != null) {
+            File out = new File(destDir, e.getName());
+            if (!out.getCanonicalPath().startsWith(destDir.getCanonicalPath())) { zis.closeEntry(); continue; }
+            if (e.isDirectory()) { out.mkdirs(); zis.closeEntry(); continue; }
+            File parent = out.getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+            FileOutputStream fos = new FileOutputStream(out);
+            int n;
+            while ((n = zis.read(buf)) > 0) fos.write(buf, 0, n);
+            fos.close();
+            zis.closeEntry();
+        }
+        zis.close();
     }
 
     @Override
@@ -166,67 +179,66 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         }
         @JavascriptInterface
         public void startListen() {
-            runOnUiThread(new Runnable() {
-                public void run() { startRecording(); }
-            });
+            runOnUiThread(new Runnable() { public void run() { startRecording(); } });
         }
         @JavascriptInterface
         public void stopListen() {
-            runOnUiThread(new Runnable() {
-                public void run() { stopRecording(); }
-            });
+            new Thread(new Runnable() { public void run() { stopRecording(); } }).start();
+        }
+        @JavascriptInterface
+        public boolean nativeReady() {
+            return modelReady;
         }
     }
 
     private void startRecording() {
-        if (!modelReady) {
-            Log.w(TAG, "Модель ещё не готова");
-            return;
-        }
+        if (!modelReady) { status("model_not_ready"); return; }
         if (listening) return;
         listening = true;
-        stream = recognizer.createStream();
-
+        try {
+            recognizer = new Recognizer(model, 16000.0f);
+        } catch (Exception e) {
+            Log.e(TAG, "Recognizer: " + e);
+            listening = false;
+            return;
+        }
         int bufferSize = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         try {
             recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, 16000,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
             recorder.startRecording();
         } catch (Exception e) {
-            Log.e(TAG, "Не удалось запустить AudioRecord: " + e.getMessage());
+            Log.e(TAG, "AudioRecord: " + e);
             listening = false;
             return;
         }
-
         recThread = new Thread(new Runnable() {
             public void run() {
                 short[] buf = new short[1600];
-                String lastTmp = "";
-                while (listening) {
-                    int n = recorder.read(buf, 0, buf.length);
-                    if (n <= 0) break;
-                    float[] f = new float[n];
-                    for (int i = 0; i < n; i++) f[i] = buf[i] / 32768.0f;
-                    stream.acceptWaveform(f, 16000);
-                    while (recognizer.isReady(stream)) recognizer.decode(stream);
-                    final OnlineRecognizerResult r = recognizer.getResult(stream);
-                    if (r != null && r.getText() != null && !r.getText().isEmpty()) {
-                        final String tmp = r.getText().trim();
-                        final boolean isEndpoint = recognizer.isEndpoint(stream);
-                        if (!tmp.equals(lastTmp) || isEndpoint) {
-                            lastTmp = tmp;
+                try {
+                    while (listening) {
+                        int n = recorder.read(buf, 0, buf.length);
+                        if (n <= 0) break;
+                        boolean fin = recognizer.acceptWaveForm(buf, n);
+                        String raw = fin ? recognizer.getResult() : recognizer.getPartialResult();
+                        JSONObject j = new JSONObject(raw);
+                        final String text = (fin ? j.optString("text", "") : j.optString("partial", "")).trim();
+                        final boolean isFinal = fin;
+                        if (!text.isEmpty()) {
                             runOnUiThread(new Runnable() {
                                 public void run() {
-                                    String js = "window.onMironStream&&window.onMironStream(" + jsQuote(tmp) + "," + isEndpoint + ")";
-                                    web.evaluateJavascript(js, null);
-                                    if (isEndpoint) {
-                                        recognizer.reset(stream);
-                                        web.evaluateJavascript("window.onMironResult&&window.onMironResult(" + jsQuote(tmp) + ")", null);
+                                    if (isFinal) {
+                                        web.evaluateJavascript("window.onMironStream&&window.onMironStream(" + jsQuote(text) + ",true)", null);
+                                        web.evaluateJavascript("window.onMironResult&&window.onMironResult(" + jsQuote(text) + ")", null);
+                                    } else {
+                                        web.evaluateJavascript("window.onMironStream&&window.onMironStream(" + jsQuote(text) + ",false)", null);
                                     }
                                 }
                             });
                         }
                     }
+                } catch (Exception e) {
+                    Log.e(TAG, "rec loop: " + e);
                 }
             }
         });
@@ -234,12 +246,29 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void stopRecording() {
+        if (!listening) return;
         listening = false;
+        final Recognizer r = recognizer;
+        recognizer = null;
+        try {
+            if (r != null) {
+                JSONObject j = new JSONObject(r.getFinalResult());
+                final String text = j.optString("text", "").trim();
+                if (!text.isEmpty()) {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            web.evaluateJavascript("window.onMironResult&&window.onMironResult(" + jsQuote(text) + ")", null);
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "final: " + e);
+        }
         if (recorder != null) {
             try { recorder.stop(); recorder.release(); } catch (Exception e) {}
             recorder = null;
         }
-        stream = null;
     }
 
     private String jsQuote(String s) {
@@ -261,7 +290,8 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     @Override
     protected void onDestroy() {
-        stopRecording();
+        listening = false;
+        if (recorder != null) { try { recorder.release(); } catch (Exception e) {} }
         if (tts != null) tts.shutdown();
         super.onDestroy();
     }
