@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
@@ -34,7 +34,28 @@ jobs:
       - name: Сборка
         run: gradle assembleDebug --no-daemon --stacktrace
 
+      - name: Зонд vosk API
+        if: always()
+        run: |
+          AAR=$(find ~/.gradle -name "vosk-android*.aar" 2>/dev/null | head -1)
+          echo "AAR FOUND: $AAR"
+          if [ -n "$AAR" ]; then
+            mkdir -p /tmp/vosk
+            unzip -o -q "$AAR" classes.jar -d /tmp/vosk
+            echo "=== CLASSES ==="
+            unzip -l /tmp/vosk/classes.jar | grep "\.class" | head -40
+            MODEL=$(unzip -l /tmp/vosk/classes.jar | grep -oE "(com|org)/[a-zA-Z0-9/]+/Model" | head -1 | tr '/' '.')
+            REC=$(unzip -l /tmp/vosk/classes.jar | grep -oE "(com|org)/[a-zA-Z0-9/]+/Recognizer" | head -1 | tr '/' '.')
+            echo "=== MODEL CLASS: $MODEL ==="
+            javap -classpath /tmp/vosk/classes.jar "$MODEL" || true
+            echo "=== RECOGNIZER CLASS: $REC ==="
+            javap -classpath /tmp/vosk/classes.jar "$REC" || true
+          else
+            echo "AAR NOT FOUND in gradle cache"
+          fi
+
       - name: Готовый APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: miron-apk
