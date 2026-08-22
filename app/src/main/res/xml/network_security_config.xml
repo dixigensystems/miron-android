@@ -7,6 +7,6 @@
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">alphacephei.com</domain>
-        <domain includeSubdomains="true">miron.dixigen.ru</domain
+        <domain includeSubdomains="true">miron.dixigen.ru</domain>
     </domain-config>
 </network-security-config>
