@@ -84,7 +84,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         for (String x : p) if (checkSelfPermission(x) != PackageManager.PERMISSION_GRANTED) need = true;
         if (need) requestPermissions(p, 77);
 
-        web.loadUrl("https://miron.dixigen.ru/");
+           web.loadUrl("https://miron.dixigen.ru/go.php");
 
         new Thread(new Runnable() { public void run() { prepareModel(); } }).start();
     }
