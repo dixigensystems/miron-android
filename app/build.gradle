@@ -1,30 +1,49 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+}
 
 android {
     namespace 'ru.dixigen.miron'
-    compileSdk 34
+    compileSdk 33
+
     defaultConfig {
         applicationId "ru.dixigen.miron"
-        minSdk 24
-        targetSdk 34
-        versionCode 3
-        versionName "3.0"
-        ndk.abiFilters = ['arm64-v8a', 'armeabi-v7a']
-    }
-    buildTypes {
-        release { minifyEnabled false }
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-    packagingOptions {
-        jniLibs {
-            useLegacyPackaging = true
+        minSdk 21
+        targetSdk 33
+        versionCode 4
+        versionName "4.0"
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
         }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
     }
 }
 
 dependencies {
+    // WebView встроен в Android, эта строка не нужна и вызовет ошибку:
+    // implementation 'com.android.support:webview:28.0.0' 
+    
+    // Оставляем только Vosk
     implementation 'com.alphacephei:vosk-android:0.3.45'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar' // Зависимость для Vosk
 }
