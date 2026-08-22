@@ -22,8 +22,8 @@ import java.net.URL;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import com.alphacephei.Model;
-import com.alphacephei.Recognizer;
+import org.vosk.Model;
+import org.vosk.Recognizer;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
